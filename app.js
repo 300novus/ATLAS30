@@ -2063,5 +2063,74 @@ if(GH.enabled){
   setTimeout(()=>{ if(GH.enabled) ghPull(); }, 1500);
 }
 
+// ═══════════════════════════════════════════
+//  ЭКСПОРТ / ИМПОРТ DATA.JSON
+// ═══════════════════════════════════════════
+
+function exportData(){
+  const data={
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    places,
+    userCats,
+    mapImages,
+    adminPass: APP.adminPass
+  };
+  const json=JSON.stringify(data, null, 2);
+  const blob=new Blob([json],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='data.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast('Файл data.json скачан','success');
+}
+
+function importData(file){
+  const status=document.getElementById('import-status');
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const data=JSON.parse(e.target.result);
+      // Проверяем что файл валидный
+      if(!data.places && !data.userCats && !data.mapImages){
+        throw new Error('Файл не содержит данных GeoAtlas');
+      }
+      // Применяем данные
+      if(Array.isArray(data.places))    places    = data.places;
+      if(Array.isArray(data.userCats))  userCats  = data.userCats;
+      if(Array.isArray(data.mapImages)) mapImages = data.mapImages;
+      if(data.adminPass){
+        APP.adminPass=data.adminPass;
+        localStorage.setItem('ga_pass',data.adminPass);
+      }
+      saveAll();
+      _clearMarkerCache();
+      renderAll(); refreshAdminViews();
+      const count=(data.places||[]).length;
+      const imgs=(data.mapImages||[]).length;
+      if(status) status.innerHTML=
+        `<span style="color:var(--success)">✅ Загружено: ${count} точек, ${imgs} изображений</span>`;
+      showToast(`Импортировано ${count} точек и ${imgs} изображений`,'success');
+    }catch(err){
+      if(status) status.innerHTML=
+        `<span style="color:var(--danger)">❌ Ошибка: ${err.message}</span>`;
+      showToast('Ошибка импорта: '+err.message,'danger');
+    }
+  };
+  reader.readAsText(file);
+}
+
+document.getElementById('btn-export-data')?.addEventListener('click', exportData);
+document.getElementById('btn-import-data')?.addEventListener('click',()=>{
+  document.getElementById('import-file-input').click();
+});
+document.getElementById('import-file-input')?.addEventListener('change',e=>{
+  const file=e.target.files[0];
+  if(file) importData(file);
+  e.target.value=''; // сбрасываем чтобы можно было загрузить тот же файл повторно
+});
+
 // ── Start: guests go straight to map (called LAST after all functions defined) ──
 enterAsGuest();

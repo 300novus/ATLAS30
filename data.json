@@ -1,5 +1,26 @@
 {
-  "places": [],
+  "places": [
+    {
+      "id": "mmuyeodcdkzfsod9nra",
+      "name": "11111111111111111",
+      "category": "hotel",
+      "icon": "🏨",
+      "iconType": "emoji",
+      "iconData": null,
+      "color": "#3b82f6",
+      "descHtml": "1111",
+      "lat": 51.10323,
+      "lng": 71.32582,
+      "images": [],
+      "shape": "pin",
+      "markerSize": 5,
+      "showIcon": true,
+      "tags": [
+        "1111"
+      ],
+      "createdAt": 1773772605161
+    }
+  ],
   "userCats": [],
   "mapImages": [
     {
@@ -24,5 +45,5 @@
     }
   ],
   "adminPass": "admin2024",
-  "updatedAt": "2026-03-17T18:33:03.330Z"
+  "updatedAt": "2026-03-17T18:37:14.762Z"
 }

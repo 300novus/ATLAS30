@@ -41,6 +41,8 @@ function saveAll(){
   localStorage.setItem('ga_places',JSON.stringify(places));
   localStorage.setItem('ga_cats',JSON.stringify(userCats));
   localStorage.setItem('ga_mapimages',JSON.stringify(mapImages));
+  // Автосинхронизация с GitHub если настроена (ghPush объявлен позже — проверяем typeof)
+  if(typeof ghPush==='function' && typeof GH!=='undefined' && GH.enabled) ghPush();
 }
 if(!places.length){
   places=[
@@ -1919,6 +1921,147 @@ function duplicatePlace(id){
     },100);
   }
 })();
+
+// ═══════════════════════════════════════════
+//  GITHUB SYNC — data.json в репозитории
+// ═══════════════════════════════════════════
+
+const GH = {
+  get repo(){  return localStorage.getItem('gh_repo')||''; },
+  get token(){ return localStorage.getItem('gh_token')||''; },
+  get enabled(){ return !!(this.repo && this.token); },
+  filePath: 'data.json',
+};
+
+let _ghFileSha = null; // SHA последнего файла (нужен для обновления)
+
+function ghSetStatus(type, text){
+  const el=document.getElementById('gh-sync-status'); if(!el) return;
+  el.className='sync-status '+type;
+  el.textContent='● '+text;
+}
+
+function ghShowIndicator(text, hide=true){
+  const el=document.getElementById('sync-indicator'); if(!el) return;
+  el.textContent=text; el.style.display='block';
+  if(hide) setTimeout(()=>el.style.display='none', 3000);
+}
+
+// Читает data.json из GitHub
+async function ghPull(){
+  if(!GH.enabled){ showToast('Сначала настройте GitHub sync в настройках','warning'); return; }
+  ghSetStatus('loading','Загрузка…');
+  ghShowIndicator('⬇️ Загружаю данные…', false);
+  try{
+    const r=await fetch(`https://api.github.com/repos/${GH.repo}/contents/${GH.filePath}`,{
+      headers:{'Authorization':'token '+GH.token,'Accept':'application/vnd.github.v3+json'}
+    });
+    if(r.status===404){
+      // Файл не существует — это нормально при первом запуске
+      ghSetStatus('ok','Готово (файл не создан)');
+      ghShowIndicator('☁️ Файл data.json не найден — будет создан при первом сохранении');
+      return;
+    }
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const json=await r.json();
+    _ghFileSha=json.sha;
+    const data=JSON.parse(atob(json.content.replace(/\n/g,'')));
+    // Применяем данные
+    if(data.places)   places   = data.places;
+    if(data.userCats) userCats = data.userCats;
+    if(data.mapImages)mapImages= data.mapImages;
+    // Синхронизируем пароль если есть
+    if(data.adminPass){ APP.adminPass=data.adminPass; localStorage.setItem('ga_pass',data.adminPass); }
+    saveAll(); // сохраняем в localStorage тоже
+    _clearMarkerCache();
+    renderAll(); refreshAdminViews();
+    ghSetStatus('ok','Синхронизировано');
+    ghShowIndicator('✅ Данные загружены с GitHub');
+    showToast('Данные загружены с GitHub','success');
+  }catch(e){
+    ghSetStatus('err','Ошибка: '+e.message);
+    ghShowIndicator('❌ Ошибка загрузки: '+e.message);
+    showToast('Ошибка GitHub: '+e.message,'danger');
+  }
+}
+
+// Сохраняет data.json в GitHub
+async function ghPush(){
+  if(!GH.enabled){ showToast('Сначала настройте GitHub sync в настройках','warning'); return; }
+  ghSetStatus('loading','Сохранение…');
+  ghShowIndicator('⬆️ Отправляю данные…', false);
+  try{
+    // Сначала получаем текущий SHA если не знаем
+    if(!_ghFileSha){
+      const r=await fetch(`https://api.github.com/repos/${GH.repo}/contents/${GH.filePath}`,{
+        headers:{'Authorization':'token '+GH.token,'Accept':'application/vnd.github.v3+json'}
+      });
+      if(r.ok){ const j=await r.json(); _ghFileSha=j.sha; }
+    }
+    const data={places,userCats,mapImages,adminPass:APP.adminPass,updatedAt:new Date().toISOString()};
+    const content=btoa(unescape(encodeURIComponent(JSON.stringify(data,null,2))));
+    const body={message:'GeoAtlas data update '+new Date().toLocaleString('ru'),content};
+    if(_ghFileSha) body.sha=_ghFileSha;
+    const r=await fetch(`https://api.github.com/repos/${GH.repo}/contents/${GH.filePath}`,{
+      method:'PUT',
+      headers:{'Authorization':'token '+GH.token,'Accept':'application/vnd.github.v3+json','Content-Type':'application/json'},
+      body:JSON.stringify(body)
+    });
+    if(!r.ok){ const e=await r.json(); throw new Error(e.message||'HTTP '+r.status); }
+    const result=await r.json();
+    _ghFileSha=result.content.sha;
+    ghSetStatus('ok','Сохранено ✓');
+    ghShowIndicator('✅ Данные сохранены в GitHub');
+    showToast('Данные сохранены в GitHub','success');
+  }catch(e){
+    ghSetStatus('err','Ошибка: '+e.message);
+    ghShowIndicator('❌ Ошибка сохранения: '+e.message);
+    showToast('Ошибка GitHub: '+e.message,'danger');
+  }
+}
+
+// Автосохранение в GitHub встроено напрямую в saveAll() ниже
+
+// Инициализация настроек GitHub
+function initGhSettings(){
+  const repoEl=document.getElementById('gh-repo');
+  const tokenEl=document.getElementById('gh-token');
+  if(!repoEl||!tokenEl) return;
+  repoEl.value=GH.repo;
+  tokenEl.value=GH.token;
+  if(GH.enabled) ghSetStatus('ok','Настроено'); else ghSetStatus('off','Не настроено');
+}
+
+document.getElementById('btn-gh-save-cfg')?.addEventListener('click',()=>{
+  const repo=document.getElementById('gh-repo').value.trim();
+  const token=document.getElementById('gh-token').value.trim();
+  if(!repo||!token){ showToast('Заполните репозиторий и токен','warning'); return; }
+  localStorage.setItem('gh_repo',repo);
+  localStorage.setItem('gh_token',token);
+  ghSetStatus('ok','Настроено');
+  showToast('Настройки GitHub сохранены','success');
+  // Сразу пробуем загрузить данные
+  ghPull();
+});
+document.getElementById('btn-gh-pull')?.addEventListener('click',ghPull);
+document.getElementById('btn-gh-push')?.addEventListener('click',ghPush);
+document.getElementById('gh-token-eye')?.addEventListener('click',()=>{
+  const i=document.getElementById('gh-token');
+  i.type=i.type==='password'?'text':'password';
+});
+
+// При открытии настроек — инициализируем поля
+const _origAdmNav=document.querySelectorAll('.adm-nav-item');
+document.querySelectorAll('.adm-nav-item').forEach(item=>item.addEventListener('click',()=>{
+  if(item.dataset.sec==='settings') setTimeout(initGhSettings,50);
+}));
+
+// При старте — загружаем с GitHub если настроено
+if(GH.enabled){
+  ghSetStatus('ok','Настроено');
+  // Загружаем после инициализации карты
+  setTimeout(()=>{ if(GH.enabled) ghPull(); }, 1500);
+}
 
 // ── Start: guests go straight to map (called LAST after all functions defined) ──
 enterAsGuest();

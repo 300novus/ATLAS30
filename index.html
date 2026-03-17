@@ -90,6 +90,7 @@
         <button class="map-btn" id="zfit">⊡</button>
       </div>
       <div class="map-scale" id="map-scale">—</div>
+      <div class="sync-indicator" id="sync-indicator" style="display:none"></div>
       <div class="map-coords-disp" id="map-coords-disp">—</div>
     </div><!-- /map-area -->
   </div>
@@ -170,6 +171,32 @@
           <div class="form-group"><label class="form-label">Новый пароль</label><input type="password" class="form-input" id="s-new-p" placeholder="Мин. 6 символов"></div>
           <div class="form-group"><label class="form-label">Подтверждение</label><input type="password" class="form-input" id="s-cnf-p" placeholder="Повторите пароль"></div>
           <button class="btn btn-primary" id="btn-change-pass">Изменить пароль</button>
+        </div>
+        <div class="settings-sec">
+          <h3>☁️ Синхронизация через GitHub</h3>
+          <p style="font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.6">
+            Данные сохраняются в <b style="color:var(--text2)">data.json</b> в вашем репозитории.
+            Все устройства видят одни и те же метки.<br>
+            Нужен <a href="https://github.com/settings/tokens/new?scopes=repo&description=GeoAtlas" target="_blank" style="color:var(--accent)">Personal Access Token</a> с правом <b>repo</b>.
+          </p>
+          <div class="form-group">
+            <label class="form-label">Репозиторий (owner/repo)</label>
+            <input type="text" class="form-input" id="gh-repo" placeholder="300novus/ATLAS30">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Personal Access Token</label>
+            <div class="pass-wrap">
+              <input type="password" class="form-input" id="gh-token" placeholder="ghp_xxxxxxxxxxxx">
+              <button class="pass-eye" id="gh-token-eye">👁</button>
+            </div>
+            <div style="font-size:10px;color:var(--text3);margin-top:4px">Хранится только локально на этом устройстве, в код не попадает</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <button class="btn btn-primary btn-sm" id="btn-gh-save-cfg">💾 Сохранить настройки</button>
+            <button class="btn btn-ghost btn-sm" id="btn-gh-pull">⬇️ Загрузить с GitHub</button>
+            <button class="btn btn-ghost btn-sm" id="btn-gh-push">⬆️ Отправить на GitHub</button>
+            <span class="sync-status off" id="gh-sync-status">● Не настроено</span>
+          </div>
         </div>
         <div class="settings-sec">
           <h3>🗑 Опасная зона</h3>

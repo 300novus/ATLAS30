@@ -182,9 +182,10 @@ function resizeCanvas(){
   const w=area.offsetWidth;
   const h=area.offsetHeight;
   if(w<10||h<10) return;
-  // Пиксельный буфер = размер контейнера. CSS размер не трогаем — canvas абсолютный внутри inset:0
-  canvas.width=w;
-  canvas.height=h;
+  // worldBase теперь константа — при ресайзе координаты не меняются.
+  // Просто обновляем размер canvas и перерисовываем.
+  canvas.width  = w;
+  canvas.height = h;
   drawMap(); renderMapImages(); renderMarkers();
 }
 
@@ -192,7 +193,17 @@ function resizeCanvas(){
 // Используются маркерами и инверсным кликом.
 // "span" = сколько градусов долготы умещается при z=1 на всю ширину экрана.
 // Базовый размер мира = min(w,h) — совпадает с drawTiles
-function worldBase(){ return Math.min(canvas.width, canvas.height); }
+// worldBase — фиксированный базовый размер мира в пикселях.
+// Устанавливается один раз при первом рендере и не меняется при ресайзе.
+// Это гарантирует что координаты pt()/inv() остаются стабильными
+// при любом размере окна — как "запечённые" в карту.
+// worldBase — всегда пересчитывается, никакого кэша.
+// Кэширование было причиной плавания объектов при ресайзе браузера.
+// Фиксированная база мира — НЕ зависит от размера окна.
+// MAP.z=1 → мир занимает 1000px независимо от разрешения.
+// Это гарантирует что координаты не меняются при ресайзе браузера.
+const WORLD_BASE = 1000;
+function worldBase(){ return WORLD_BASE; }
 function pt(lat,lng){
   const w=canvas.width,h=canvas.height,z=MAP.z,span=0.7,base=worldBase();
   return{x:w/2+(lng-71.5)/span*base*z+MAP.ox, y:h/2-(lat-51.15)/span*base*z+MAP.oy};
@@ -249,9 +260,9 @@ function drawMap(){
 //  грубый тайл (меньший z) из кэша чтобы не было белых дыр.
 
 function drawTiles(w,h){
-  // Мир всегда квадратный — берём меньшую сторону canvas как базу.
-  // Это гарантирует что квадратные тайлы не растягиваются.
-  const worldSize = Math.min(w, h) * MAP.z;
+  // Мир квадратный с фиксированной базой WORLD_BASE — не зависит от размера окна.
+  // Это гарантирует что тайлы и координаты совпадают при любом размере браузера.
+  const worldSize = WORLD_BASE * MAP.z;
 
   const tileZ = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX,
     Math.round(Math.log2(Math.max(0.001, MAP.z) * 4))));
@@ -795,7 +806,6 @@ document.querySelectorAll('.tab-btn').forEach(b=>b.addEventListener('click',()=>
   document.getElementById('tab-'+b.dataset.tab).classList.add('active');
   if(b.dataset.tab==='stats') renderStats();
 }));
-document.getElementById('btn-toggle-sb').addEventListener('click',()=>document.getElementById('sidebar').classList.toggle('hidden'));
 
 // ═══════════════════════════════════════════
 //  MAP INTERACTION
@@ -1704,8 +1714,8 @@ function renderMapImagesAdmin(){
       if(b.dataset.action==='goto'){
         showPage('map'); renderAll();
         setTimeout(()=>{
-          const w=canvas.width,h=canvas.height,span=0.7;
-          MAP.ox=-(mi.lng-71.5)/span*w*MAP.z; MAP.oy=(mi.lat-51.15)/span*h*MAP.z;
+          const span=0.7,base=worldBase();
+          MAP.ox=-(mi.lng-71.5)/span*base*MAP.z; MAP.oy=(mi.lat-51.15)/span*base*MAP.z;
           drawMap(); renderMapImages(); renderMarkers();
         },100);
       }

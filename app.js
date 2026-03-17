@@ -87,9 +87,7 @@ function updateHeaderForRole(){
   document.getElementById('btn-map-login').style.display=isAdmin?'none':'';
   document.getElementById('admin-bar').classList.toggle('show', isAdmin);
   document.getElementById('admin-bar-img').classList.toggle('show', isAdmin);
-  // Mobile ⚙️ button
-  const mobBtn = document.getElementById('admin-mob-btn');
-  if(mobBtn) mobBtn.classList.toggle('show', isAdmin);
+  const mobBtn=document.getElementById('admin-mob-btn'); if(mobBtn) mobBtn.classList.toggle('show', isAdmin);
   if(isAdmin){
     document.getElementById('chip-icon').textContent='🔑';
     document.getElementById('chip-name').textContent='Администратор';
@@ -216,7 +214,8 @@ function drawMap(){
   } else {
     drawVectorFallback(w,h);
   }
-  drawMapImages();   // изображения поверх тайлов, под маркерами
+  drawMapImages();          // изображения поверх тайлов
+  drawMarkersOnCanvas();    // маркеры — синхронно на canvas, без DOM lag
   drawCompass(w);
   updateScale(w,h);
 }
@@ -388,7 +387,7 @@ function zoomTo(target, cx, cy){
     MAP.oy = startOy + (endOy - startOy) * e;
     drawMap();
     renderMapImages();
-    renderMarkers(false);
+    renderMarkers();
     if(p < 1){ zoomAnimId = requestAnimationFrame(step); }
     else { zoomAnimId=null; }
   }
@@ -400,211 +399,148 @@ function zoomTo(target, cx, cy){
 // ═══════════════════════════════════════════
 const iconCache={};
 
-// Размеры маркеров (px при max зуме ZOOM_MAX)
-const MARKER_SIZES = {1:24, 2:36, 3:48, 4:72, 5:96};
-
-function markerSVG(color, icon, iconType, iconData, shape, showIcon){
-  shape = shape || 'pin';
-  showIcon = showIcon !== false; // default true
-  const uid_ = 'm'+Math.random().toString(36).slice(2,7);
-  const hasCustom = iconType==='custom' && iconData;
-
-  // Icon content (emoji via foreignObject, custom via image)
-  let iconContent = '';
-  if(showIcon){
-    if(hasCustom){
-      iconContent = `<defs><clipPath id="${uid_}"><circle cx="20" cy="20" r="11"/></clipPath></defs>
-        <image href="${iconData}" x="9" y="9" width="22" height="22" clip-path="url(#${uid_})"/>`;
-    } else {
-      iconContent = `<foreignObject x="7" y="7" width="26" height="26">
-        <div xmlns="http://www.w3.org/1999/xhtml" style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;user-select:none">${icon||'📍'}</div>
-      </foreignObject>`;
-    }
-  }
-
-  const dark  = 'rgba(0,0,0,0.22)';
-  const light = 'rgba(255,255,255,0.13)';
-  const rim   = 'rgba(255,255,255,0.22)';
-
-  // Shape bodies — all fit in 40×40 viewBox (pin uses 40×46)
-  if(shape === 'pin'){
-    return `<svg viewBox="0 0 40 46" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="46">
-      <path d="M20 0C8.95 0 0 8.95 0 20c0 13.3 20 26 20 26s20-12.7 20-26C40 8.95 31.05 0 20 0z" fill="${color}"/>
-      <circle cx="20" cy="19" r="12.5" fill="${dark}"/>
-      <circle cx="20" cy="18" r="12.5" fill="${light}"/>
-      ${iconContent}
-      <circle cx="20" cy="19" r="12.5" fill="none" stroke="${rim}" stroke-width="1"/>
-    </svg>`;
-  }
-  if(shape === 'circle'){
-    return `<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40">
-      <circle cx="20" cy="20" r="19" fill="${color}"/>
-      <circle cx="20" cy="20" r="13" fill="${dark}"/>
-      <circle cx="20" cy="19" r="13" fill="${light}"/>
-      ${iconContent}
-      <circle cx="20" cy="20" r="19" fill="none" stroke="${rim}" stroke-width="1.5"/>
-    </svg>`;
-  }
-  if(shape === 'square'){
-    return `<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40">
-      <rect x="1" y="1" width="38" height="38" rx="6" fill="${color}"/>
-      <rect x="8" y="8" width="24" height="24" rx="3" fill="${dark}"/>
-      <rect x="8" y="7" width="24" height="24" rx="3" fill="${light}"/>
-      ${iconContent}
-      <rect x="1" y="1" width="38" height="38" rx="6" fill="none" stroke="${rim}" stroke-width="1.5"/>
-    </svg>`;
-  }
-  if(shape === 'diamond'){
-    return `<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40">
-      <polygon points="20,1 39,20 20,39 1,20" fill="${color}"/>
-      <circle cx="20" cy="20" r="11" fill="${dark}"/>
-      <circle cx="20" cy="19" r="11" fill="${light}"/>
-      ${iconContent}
-      <polygon points="20,1 39,20 20,39 1,20" fill="none" stroke="${rim}" stroke-width="1.5"/>
-    </svg>`;
-  }
-  if(shape === 'triangle'){
-    return `<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40">
-      <polygon points="20,2 38,38 2,38" fill="${color}"/>
-      <circle cx="20" cy="26" r="9" fill="${dark}"/>
-      <circle cx="20" cy="25" r="9" fill="${light}"/>
-      ${iconContent}
-      <polygon points="20,2 38,38 2,38" fill="none" stroke="${rim}" stroke-width="1.5"/>
-    </svg>`;
-  }
-  return '';
+function markerSVG(color,icon,iconType,iconData,shape,showIcon){
+  shape=shape||'pin'; showIcon=showIcon!==false;
+  const uid_='m'+Math.random().toString(36).slice(2,7);
+  const hasCustom=iconType==='custom'&&iconData;
+  // Используем foreignObject для эмодзи — единственный надёжный способ в SVG
+  const ic = showIcon ? (hasCustom
+    ? `<defs><clipPath id="${uid_}"><circle cx="20" cy="20" r="11"/></clipPath></defs><image href="${iconData}" x="9" y="9" width="22" height="22" clip-path="url(#${uid_})"/>`
+    : `<foreignObject x="7" y="7" width="26" height="26"><div xmlns="http://www.w3.org/1999/xhtml" style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;user-select:none">${icon||'📍'}</div></foreignObject>`) : '';
+  const dk='rgba(0,0,0,0.22)'; const lt='rgba(255,255,255,0.13)'; const rim='rgba(255,255,255,0.22)';
+  if(shape==='circle') return `<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40"><circle cx="20" cy="20" r="19" fill="${color}"/><circle cx="20" cy="20" r="13" fill="${dk}"/><circle cx="20" cy="19" r="13" fill="${lt}"/>${ic}<circle cx="20" cy="20" r="19" fill="none" stroke="${rim}" stroke-width="1.5"/></svg>`;
+  if(shape==='square') return `<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40"><rect x="1" y="1" width="38" height="38" rx="5" fill="${color}"/><rect x="8" y="8" width="24" height="24" rx="3" fill="${dk}"/><rect x="8" y="7" width="24" height="24" rx="3" fill="${lt}"/>${ic}<rect x="1" y="1" width="38" height="38" rx="5" fill="none" stroke="${rim}" stroke-width="1.5"/></svg>`;
+  if(shape==='diamond') return `<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40"><polygon points="20,1 39,20 20,39 1,20" fill="${color}"/><circle cx="20" cy="20" r="11" fill="${dk}"/><circle cx="20" cy="19" r="11" fill="${lt}"/>${ic}<polygon points="20,1 39,20 20,39 1,20" fill="none" stroke="${rim}" stroke-width="1.5"/></svg>`;
+  if(shape==='triangle') return `<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40"><polygon points="20,2 38,38 2,38" fill="${color}"/><circle cx="20" cy="27" r="9" fill="${dk}"/><circle cx="20" cy="26" r="9" fill="${lt}"/>${ic}<polygon points="20,2 38,38 2,38" fill="none" stroke="${rim}" stroke-width="1.5"/></svg>`;
+  return `<svg viewBox="0 0 40 46" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="46"><path d="M20 0C8.95 0 0 8.95 0 20c0 13.3 20 26 20 26s20-12.7 20-26C40 8.95 31.05 0 20 0z" fill="${color}"/><circle cx="20" cy="19" r="12.5" fill="${dk}"/><circle cx="20" cy="18" r="12.5" fill="${lt}"/>${ic}<circle cx="20" cy="19" r="12.5" fill="none" stroke="${rim}" stroke-width="1"/></svg>`;
 }
 
-// renderMarkers — два режима:
-// 1) полная перестройка DOM (rebuild=true) — при изменении данных, фильтра, выбора
-// 2) только обновление позиций (rebuild=false) — при зуме и перемещении карты
-function renderMarkers(rebuild){
-  if(rebuild === false){
-    // Быстрый путь: только обновляем позиции существующих маркеров
-    _updateMarkerPositions();
-    return;
-  }
-  // Полная перестройка
-  document.querySelectorAll('.marker').forEach(m=>m.remove());
-  document.querySelector('.popup')?.remove();
-  const isAdmin=APP.role==='admin';
+// Размеры маркеров при максимальном зуме (px)
+const MARKER_BASE_SIZES = {1:20, 2:32, 3:44, 4:60, 5:80};
 
+// ── Кэш SVG→Image для маркеров ──────────────────────────────────
+// Ключ: цвет+форма+иконка+showIcon — не зависит от зума.
+// При рисовании масштабируем через ctx.drawImage(img, x,y, w,h).
+const _markerImgCache = {};
+
+function _getMarkerImg(pl){
+  const key = [pl.id, pl.color, pl.shape||'pin', pl.icon, pl.iconType, pl.showIcon].join('|');
+  if(_markerImgCache[key] && _markerImgCache[key] !== 'loading') return _markerImgCache[key];
+  if(_markerImgCache[key] === 'loading') return null;
+
+  _markerImgCache[key] = 'loading';
+  const svgStr = markerSVG(pl.color, pl.icon, pl.iconType, pl.iconData, pl.shape||'pin', pl.showIcon!==false);
+  const blob = new Blob([svgStr], {type:'image/svg+xml;charset=utf-8'});
+  const url  = URL.createObjectURL(blob);
+  const img  = new Image();
+  img.onload = ()=>{
+    URL.revokeObjectURL(url);
+    _markerImgCache[key] = img;
+    drawMap();
+    renderMarkersDOM();
+  };
+  img.onerror = ()=>{ delete _markerImgCache[key]; };
+  img.src = url;
+  return null; // still loading
+}
+
+// Очищаем кэш при изменении данных
+function _clearMarkerCache(id){
+  Object.keys(_markerImgCache).forEach(k=>{ if(!id||k.startsWith(id+'|')) delete _markerImgCache[k]; });
+}
+
+// Hit-test маркеров по canvas-координатам
+function hitTestMarker(x,y){
+  const list=[...places].filter(pl=>{
+    if(APP.filterCat!=='all'&&pl.category!==APP.filterCat) return false;
+    const pos=pt(pl.lat,pl.lng);
+    return pos.x>=-150&&pos.x<=canvas.width+150&&pos.y>=-150&&pos.y<=canvas.height+150;
+  });
+  for(let i=list.length-1;i>=0;i--){
+    const pl=list[i];
+    const pos=pt(pl.lat,pl.lng);
+    const shape=pl.shape||'pin';
+    const basePx=MARKER_BASE_SIZES[pl.markerSize||2]||32;
+    const w=Math.max(4,basePx*(MAP.z/ZOOM_MAX));
+    const h=shape==='pin'?w*1.15:w;
+    const left=pos.x-w/2;
+    const top=shape==='pin'?pos.y-h:pos.y-h/2;
+    if(x>=left&&x<=left+w&&y>=top&&y<=top+h) return pl;
+  }
+  return null;
+}
+
+// Рисует ВСЕ маркеры на canvas — вызывается из drawMap() каждый кадр
+function drawMarkersOnCanvas(){
   places.forEach(pl=>{
     if(APP.filterCat!=='all'&&pl.category!==APP.filterCat) return;
-    const pos=pt(pl.lat,pl.lng);
-    if(pos.x<-200||pos.x>canvas.width+200||pos.y<-200||pos.y>canvas.height+200){
-      // Вне экрана — пропускаем, но не удаляем из DOM если уже есть
-      return;
+    const pos = pt(pl.lat, pl.lng);
+    if(pos.x<-150||pos.x>canvas.width+150||pos.y<-150||pos.y>canvas.height+150) return;
+
+    const img = _getMarkerImg(pl);
+    if(!img) return; // ещё грузится — пропускаем этот кадр
+
+    const shape  = pl.shape||'pin';
+    const basePx = MARKER_BASE_SIZES[pl.markerSize||2]||32;
+    const w      = Math.max(4, basePx * (MAP.z / ZOOM_MAX));
+    const h      = shape==='pin' ? w*1.15 : w;
+    // Якорь: пин — нижний центр, остальные — центр
+    const dx = -w/2;
+    const dy = shape==='pin' ? -h : -h/2;
+
+    ctx.save();
+    if(APP.selectedId===pl.id){
+      ctx.shadowColor='rgba(59,130,246,0.85)';
+      ctx.shadowBlur=10;
     }
-
-    const basePx  = MARKER_SIZES[pl.markerSize||2] || 36;
-    const scaledPx = Math.max(4, basePx * (MAP.z / ZOOM_MAX));
-    const shape   = pl.shape || 'pin';
-    const svgH    = shape==='pin' ? scaledPx*1.15 : scaledPx;
-    const offsetY = shape==='pin' ? svgH : svgH/2;
-
-    const el=document.createElement('div');
-    el.className='marker'+(APP.selectedId===pl.id?' selected':'');
-    el.dataset.id=pl.id;
-    el.dataset.lat=pl.lat;
-    el.dataset.lng=pl.lng;
-    el.style.position='absolute';
-    el.style.cursor='pointer';
-    el.style.zIndex='30';
-    el.style.left=pos.x+'px';
-    el.style.top=pos.y+'px';
-    el.style.transform=`translate(-50%,-${offsetY}px)`;
-    if(APP.selectedId===pl.id) el.style.filter='drop-shadow(0 4px 14px rgba(59,130,246,.7))';
-
-    const svgStr = markerSVG(pl.color,pl.icon,pl.iconType,pl.iconData,shape,pl.showIcon);
-    const scaledSvg = svgStr
-      .replace(/width="40"/, `width="${Math.round(scaledPx)}"`)
-      .replace(/height="46"/, `height="${Math.round(svgH)}"`)
-      .replace(/height="40"/, `height="${Math.round(scaledPx)}"`);
-
-    const labelSize = Math.max(8, Math.min(12, 9 * MAP.z / ZOOM_MAX * 2));
-    el.innerHTML=`<div class="marker-label" style="font-size:${labelSize}px">${pl.name}</div><div class="marker-body">${scaledSvg}</div>`;
-
-    el.addEventListener('click',e=>{e.stopPropagation();selectPlace(pl.id);});
-    if(isAdmin) el.addEventListener('mousedown',e=>startMarkerDrag(e,pl));
-    mapCon.appendChild(el);
+    ctx.drawImage(img, pos.x+dx, pos.y+dy, w, h);
+    ctx.restore();
   });
+}
 
+// DOM-слой: только popup. Маркеры теперь на canvas.
+function renderMarkers(){
+  renderMarkersDOM();
+}
+function renderMarkersDOM(){
+  document.querySelector('.popup')?.remove();
   if(APP.selectedId){
     const pl=places.find(x=>x.id===APP.selectedId);
     if(pl) showPopup(pl);
   }
 }
 
-// Обновляет только left/top/transform/size без пересоздания DOM
-function _updateMarkerPositions(){
-  document.querySelectorAll('.marker[data-id]').forEach(el=>{
-    const id=el.dataset.id;
-    const pl=places.find(x=>x.id===id);
-    if(!pl) return;
-
-    const pos=pt(pl.lat,pl.lng);
-    const basePx   = MARKER_SIZES[pl.markerSize||2] || 36;
-    const scaledPx = Math.max(4, basePx * (MAP.z / ZOOM_MAX));
-    const shape    = pl.shape || 'pin';
-    const svgH     = shape==='pin' ? scaledPx*1.15 : scaledPx;
-    const offsetY  = shape==='pin' ? svgH : svgH/2;
-
-    // Позиция
-    el.style.left = pos.x+'px';
-    el.style.top  = pos.y+'px';
-    el.style.transform = `translate(-50%,-${offsetY}px)`;
-
-    // Если маркер вышел за экран — скрываем
-    const outOfView = pos.x<-200||pos.x>canvas.width+200||pos.y<-200||pos.y>canvas.height+200;
-    el.style.display = outOfView ? 'none' : '';
-
-    // Обновляем SVG размер
-    const body = el.querySelector('.marker-body');
-    if(body){
-      const svg = body.querySelector('svg');
-      if(svg){
-        svg.setAttribute('width', Math.round(scaledPx));
-        svg.setAttribute('height', shape==='pin' ? Math.round(svgH) : Math.round(scaledPx));
-      }
-    }
-
-    // Обновляем попап если открыт
-    const pop = mapCon.querySelector('.popup');
-    if(pop && APP.selectedId===id){
-      pop.style.left=pos.x+'px';
-      pop.style.top=pos.y+'px';
-    }
-  });
-}
 
 let mdrag=null;
 function startMarkerDrag(e,pl){
   if(e.button!==0) return; e.stopPropagation(); e.preventDefault();
-  mdrag={id:pl.id,sx:e.clientX,sy:e.clientY,moved:false};
-  const el=e.currentTarget; el.classList.add('dragging');
+  const r0=mapCon.getBoundingClientRect();
+  const startPos=pt(pl.lat,pl.lng);
+  const offX=(e.clientX-r0.left)-startPos.x;
+  const offY=(e.clientY-r0.top)-startPos.y;
+  mdrag={id:pl.id, moved:false};
+  mapCon.style.cursor='grabbing';
   const mv=ev=>{
-    if(Math.abs(ev.clientX-mdrag.sx)>3||Math.abs(ev.clientY-mdrag.sy)>3) mdrag.moved=true;
+    mdrag.moved=true;
     const r=mapCon.getBoundingClientRect();
-    el.style.left=(ev.clientX-r.left)+'px'; el.style.top=(ev.clientY-r.top)+'px';
+    const c=inv((ev.clientX-r.left)-offX, (ev.clientY-r.top)-offY);
+    const idx=places.findIndex(x=>x.id===pl.id);
+    if(idx!==-1){ places[idx].lat=+c.lat.toFixed(5); places[idx].lng=+c.lng.toFixed(5); drawMap(); renderMarkers(); }
   };
   const up=ev=>{
     document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up);
-    el.classList.remove('dragging');
-    if(mdrag.moved){
-      const r=mapCon.getBoundingClientRect();
-      const c=inv(ev.clientX-r.left,ev.clientY-r.top);
-      const idx=places.findIndex(x=>x.id===pl.id);
-      if(idx!==-1){places[idx].lat=+c.lat.toFixed(5);places[idx].lng=+c.lng.toFixed(5);saveAll();drawMap();renderMapImages();renderMarkers();renderPlacesList();showToast('Место перемещено','success');}
-    }
+    mapCon.style.cursor='';
+    if(mdrag&&mdrag.moved){ saveAll(); drawMap(); renderMapImages(); renderMarkers(); renderPlacesList(); showToast('Место перемещено','success'); }
     mdrag=null;
   };
   document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up);
 }
 
 function selectPlace(id){
+  const prev=APP.selectedId;
   APP.selectedId=(APP.selectedId===id)?null:id;
-  renderMarkers(); renderPlacesList();
+  _clearMarkerCache(id); if(prev) _clearMarkerCache(prev);
+  drawMap(); renderMapImages(); renderMarkers(); renderPlacesList();
   if(APP.selectedId){const pl=places.find(x=>x.id===id);if(pl) scrollSbTo(id);}
 }
 
@@ -820,7 +756,7 @@ function centerOn(pl){
   function step(now){
     const p=Math.min(1,(now-t0)/dur),e=ease(p);
     MAP.ox=sOx+(targetOx-sOx)*e; MAP.oy=sOy+(targetOy-sOy)*e;
-    drawMap(); renderMapImages(); renderMarkers(false);
+    drawMap(); renderMapImages(); renderMarkers();
     if(p<1) zoomAnimId=requestAnimationFrame(step); else zoomAnimId=null;
   }
   zoomAnimId=requestAnimationFrame(step);
@@ -865,7 +801,7 @@ document.getElementById('btn-toggle-sb').addEventListener('click',()=>document.g
 //  MAP INTERACTION
 // ═══════════════════════════════════════════
 mapCon.addEventListener('mousedown',e=>{
-  if(e.target.closest('.marker')||e.target.closest('.popup')||e.target.closest('.admin-bar')||e.target.closest('.map-img-resize-bar')) return;
+  if(e.target.closest('.popup')||e.target.closest('.admin-bar')||e.target.closest('.map-img-resize-bar')||e.target.closest('.admin-mob-menu')) return;
 
   // Режим добавления изображения
   if(mimAddingMode){
@@ -877,29 +813,37 @@ mapCon.addEventListener('mousedown',e=>{
     return;
   }
 
-  // Для админа — проверяем попадание в изображение на canvas
+  const _r=mapCon.getBoundingClientRect();
+  const _cx=e.clientX-_r.left, _cy=e.clientY-_r.top;
+
+  // Проверяем попадание в маркер (canvas hit-test)
+  const _hitMk=hitTestMarker(_cx,_cy);
+  if(_hitMk){
+    e.stopPropagation();
+    if(APP.role==='admin' && APP.selectedId===_hitMk.id){
+      startMarkerDrag(e,_hitMk); // второй клик = drag
+    } else {
+      selectPlace(_hitMk.id);
+    }
+    return;
+  }
+
+  // Проверяем попадание в изображение на canvas
   if(APP.role==='admin' && mapImages.length){
-    const r=mapCon.getBoundingClientRect();
-    const cx=e.clientX-r.left, cy=e.clientY-r.top;
-    const hit=hitTestMapImage(cx,cy);
+    const hit=hitTestMapImage(_cx,_cy);
     if(hit){
       e.stopPropagation();
-      if(selectedImgId===hit.id){
-        // Уже выбрано — начинаем перетаскивание
-        startImgDrag(e, hit);
-      } else {
-        // Выбираем
-        selectedImgId=hit.id;
-        drawMap(); renderMapImages(); renderMarkers();
-      }
+      if(selectedImgId===hit.id){ startImgDrag(e,hit); }
+      else { selectedImgId=hit.id; drawMap(); renderMapImages(); renderMarkers(); }
       return;
     }
   }
 
-  // Снимаем выделение изображения при клике в пустоту
-  if(selectedImgId){
-    selectedImgId=null; drawMap(); renderMapImages(); renderMarkers();
-  }
+  // Снимаем выделения при клике в пустоту
+  let _changed=false;
+  if(selectedImgId){ selectedImgId=null; _changed=true; }
+  if(APP.selectedId){ APP.selectedId=null; _changed=true; }
+  if(_changed){ drawMap(); renderMapImages(); renderMarkers(); renderPlacesList(); }
 
   // Режим добавления точки интереса
   if(APP.addingMode){
@@ -918,7 +862,7 @@ document.addEventListener('mousemove',e=>{
   }
   if(!MAP.drag) return;
   MAP.ox+=e.clientX-MAP.lx; MAP.oy+=e.clientY-MAP.ly; MAP.lx=e.clientX; MAP.ly=e.clientY;
-  drawMap(); renderMapImages(); renderMarkers(false);
+  drawMap(); renderMapImages(); renderMarkers();
 });
 document.addEventListener('mouseup',()=>{MAP.drag=false;mapCon.classList.remove('grabbing');});
 // Колесо мыши — плавный зум с накоплением
@@ -1080,15 +1024,15 @@ function openAddModal(lat,lng){
   document.getElementById('rte-editor').innerHTML='';
   currentIconType='emoji'; currentIconDataUrl=null;
   selectedEmoji='📍'; selectedColor=COLORS[0];
+  selectedShape='pin'; selectedMarkerSize=2; selectedShowIcon=true;
+  setTimeout(syncShapeModal,0);
   document.getElementById('f-icon-file').value='';
   document.getElementById('icon-preview-wrap').style.display='none';
   document.getElementById('icon-upload-area').style.display='block';
   document.getElementById('f-photos').value='';
-  selectedShape='pin'; selectedMarkerSize=2; selectedShowIcon=true;
-  initShapeModal();
   populateCatSelect(); document.getElementById('f-cat').value='';
   buildEmojiGrid('emoji-grid',selectedEmoji,e=>{selectedEmoji=e; if(currentIconType==='emoji'){const pin=document.getElementById('mini-pin');pin.textContent=e;}});
-  buildColorGrid('color-grid',selectedColor,c=>{selectedColor=c;});
+  buildColorGrid('color-grid',selectedColor,c=>{selectedColor=c; syncShapeModal();});
   renderPhotoPreviews();
   showModal('place-modal');
   setTimeout(()=>{initMiniMap();drawMiniMap();setupMiniMapClick();if(lat&&lng) syncMiniPin();},80);
@@ -1100,6 +1044,8 @@ function openEditModal(id){
   document.getElementById('f-name').value=pl.name;
   currentIconType=pl.iconType||'emoji'; currentIconDataUrl=pl.iconData||null;
   selectedEmoji=pl.icon||'📍'; selectedColor=pl.color||COLORS[0];
+  selectedShape=pl.shape||'pin'; selectedMarkerSize=pl.markerSize||2; selectedShowIcon=pl.showIcon!==false;
+  setTimeout(syncShapeModal,0);
   document.getElementById('rte-editor').innerHTML=pl.descHtml||'';
   if(currentIconType==='custom'&&currentIconDataUrl){
     document.getElementById('icon-preview-img').src=currentIconDataUrl;
@@ -1118,12 +1064,10 @@ function openEditModal(id){
     document.querySelector('[data-itab="emoji"]').classList.add('active');
     document.getElementById('itab-emoji').classList.add('active');
   }
-  selectedShape=pl.shape||'pin'; selectedMarkerSize=pl.markerSize||2; selectedShowIcon=pl.showIcon!==false;
-  initShapeModal();
   populateCatSelect(); document.getElementById('f-cat').value=pl.category;
   document.getElementById('f-lat').value=pl.lat; document.getElementById('f-lng').value=pl.lng;
   buildEmojiGrid('emoji-grid',selectedEmoji,e=>{selectedEmoji=e;});
-  buildColorGrid('color-grid',selectedColor,c=>{selectedColor=c;});
+  buildColorGrid('color-grid',selectedColor,c=>{selectedColor=c; syncShapeModal();});
   renderPhotoPreviews();
   showModal('place-modal');
   setTimeout(()=>{initMiniMap();drawMiniMap();setupMiniMapClick();syncMiniPin();},80);
@@ -1149,7 +1093,7 @@ function savePlace(){
     places.push({id:uid(),...plData}); showToast('Место добавлено','success');
   }
   saveAll(); hideModal('place-modal'); APP.addingMode=false; mapCon.classList.remove('adding'); document.getElementById('add-hint').classList.remove('show');
-  renderAll(); refreshAdminViews();
+  _clearMarkerCache(); renderAll(); refreshAdminViews();
 }
 
 document.getElementById('pm-save').addEventListener('click',savePlace);
@@ -1611,7 +1555,7 @@ function startImgDrag(e,mi){
       mapImages[idx].lat=+c.lat.toFixed(5);
       mapImages[idx].lng=+c.lng.toFixed(5);
       // Живая перерисовка во время перетаскивания
-      drawMap(); renderMapImages(); renderMarkers(false);
+      drawMap(); renderMapImages(); renderMarkers();
     }
   };
 
@@ -1773,170 +1717,66 @@ function renderAll(){
   if(APP.page==='map'){ drawMap(); renderMapImages(); renderMarkers(); renderPlacesList(); renderCatFilter(); updateHeaderForRole(); }
 }
 
-// ── Start: guests go straight to map (called LAST after all functions defined) ──
-enterAsGuest();
-
-// ═══════════════════════════════════════════
-//  MARKER SHAPE / SIZE / ICON MODAL LOGIC
-// ═══════════════════════════════════════════
-function initShapeModal(){
-  // Shape buttons
+// ── SHAPE / SIZE / ICON MODAL ──
+document.querySelectorAll('.shape-btn').forEach(b=>b.addEventListener('click',()=>{
+  selectedShape=b.dataset.shape;
+  document.querySelectorAll('.shape-btn').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+}));
+document.querySelectorAll('.msize-btn').forEach(b=>b.addEventListener('click',()=>{
+  selectedMarkerSize=+b.dataset.msize;
+  document.querySelectorAll('.msize-btn').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+}));
+function syncShapeModal(){
+  const c=selectedColor||'var(--accent)';
   document.querySelectorAll('.shape-btn').forEach(b=>{
-    b.style.color = selectedColor;
-    b.classList.toggle('active', b.dataset.shape===selectedShape);
-    b.onclick = ()=>{
-      selectedShape=b.dataset.shape;
-      document.querySelectorAll('.shape-btn').forEach(x=>x.classList.remove('active'));
-      b.classList.add('active');
-    };
+    b.classList.toggle('active',b.dataset.shape===selectedShape);
+    b.style.color=c;
+    // highlight active with marker color
+    b.style.borderColor=b.dataset.shape===selectedShape?c:'';
+    b.style.background=b.dataset.shape===selectedShape?c+'22':'';
   });
-  // Size buttons
-  document.querySelectorAll('.msize-btn').forEach(b=>{
-    b.classList.toggle('active', +b.dataset.msize===selectedMarkerSize);
-    b.onclick = ()=>{
-      selectedMarkerSize=+b.dataset.msize;
-      document.querySelectorAll('.msize-btn').forEach(x=>x.classList.remove('active'));
-      b.classList.add('active');
-    };
-  });
-  // Toggle icon
-  const tog = document.getElementById('toggle-show-icon');
-  const lbl = document.getElementById('show-icon-label');
-  tog.classList.toggle('on', selectedShowIcon);
-  lbl.textContent = selectedShowIcon ? 'Показывать иконку' : 'Без иконки (только цвет)';
-  tog.onclick = ()=>{
-    selectedShowIcon = !selectedShowIcon;
-    tog.classList.toggle('on', selectedShowIcon);
-    lbl.textContent = selectedShowIcon ? 'Показывать иконку' : 'Без иконки (только цвет)';
-  };
+  document.querySelectorAll('.msize-btn').forEach(b=>b.classList.toggle('active',+b.dataset.msize===selectedMarkerSize));
+  const tog=document.getElementById('toggle-show-icon'); const lbl=document.getElementById('show-icon-label');
+  if(tog){ tog.classList.toggle('on',selectedShowIcon); }
+  if(lbl){ lbl.textContent=selectedShowIcon?'Показывать иконку':'Без иконки (только цвет)'; }
 }
+document.getElementById('toggle-show-icon')?.addEventListener('click',()=>{
+  selectedShowIcon=!selectedShowIcon; syncShapeModal();
+});
 
-// When color changes — update shape preview color
-const _origBuildColorGrid = buildColorGrid;
-buildColorGrid = function(gridId, currentColor, onSelect){
-  _origBuildColorGrid(gridId, currentColor, (c)=>{
-    onSelect(c);
-    if(gridId==='color-grid'){
-      selectedColor=c;
-      document.querySelectorAll('.shape-btn').forEach(b=>b.style.color=c);
-    }
-  });
-};
-
-// ── Second admin bar: add image click handler ──
-document.getElementById('btn-add-img-click').addEventListener('click',()=>{
-  showPage('map');
-  mimAddingMode=true;
-  mapCon.classList.add('adding');
+// ── SECOND ADMIN BAR: image button ──
+document.getElementById('btn-add-img-click')?.addEventListener('click',()=>{
+  mimAddingMode=true; mapCon.classList.add('adding');
   document.getElementById('add-hint').textContent='🖼 Кликните на карту для размещения изображения';
   document.getElementById('add-hint').classList.add('show');
-  showToast('Кликните на карту для размещения картинки','info');
+  showToast('Кликните на карту для размещения','info');
 });
+
+// ── MOBILE SIDEBAR ──
+let _sbOverlay=null;
+function _getSbOverlay(){ if(!_sbOverlay){_sbOverlay=document.createElement('div');_sbOverlay.className='sidebar-overlay';document.querySelector('.app-body').appendChild(_sbOverlay);_sbOverlay.addEventListener('click',_closeSb);} return _sbOverlay; }
+function _openSb(){ document.getElementById('sidebar').classList.add('mobile-open'); document.getElementById('sidebar').classList.remove('hidden'); _getSbOverlay().classList.add('show'); }
+function _closeSb(){ document.getElementById('sidebar').classList.remove('mobile-open'); if(_sbOverlay) _sbOverlay.classList.remove('show'); }
+document.getElementById('btn-toggle-sb').onclick=function(){ if(window.innerWidth<=768){ document.getElementById('sidebar').classList.contains('mobile-open')?_closeSb():_openSb(); } else { document.getElementById('sidebar').classList.toggle('hidden'); } };
+window.addEventListener('resize',()=>{ if(window.innerWidth>768&&_sbOverlay) _sbOverlay.classList.remove('show'); });
 
 // ── MOBILE ADMIN DROPDOWN ──
 (function(){
-  const btn  = document.getElementById('admin-mob-btn');
-  const menu = document.getElementById('admin-mob-menu');
-  if(!btn || !menu) return;
-
-  btn.addEventListener('click', e=>{
-    e.stopPropagation();
-    menu.classList.toggle('show');
-  });
-  document.addEventListener('click', ()=> menu.classList.remove('show'));
-
-  document.getElementById('mob-add-marker').addEventListener('click',()=>{
-    menu.classList.remove('show');
-    APP.addingMode=true;
-    mapCon.classList.add('adding');
-    document.getElementById('add-hint').textContent='📍 Кликните на карту для размещения точки';
-    document.getElementById('add-hint').classList.add('show');
-  });
-  document.getElementById('mob-add-img').addEventListener('click',()=>{
-    menu.classList.remove('show');
-    mimAddingMode=true;
-    mapCon.classList.add('adding');
-    document.getElementById('add-hint').textContent='🖼 Кликните на карту для размещения картинки';
-    document.getElementById('add-hint').classList.add('show');
-  });
+  const btn=document.getElementById('admin-mob-btn'); const menu=document.getElementById('admin-mob-menu');
+  if(!btn||!menu) return;
+  btn.addEventListener('click',e=>{ e.stopPropagation(); menu.classList.toggle('show'); });
+  document.addEventListener('click',()=>menu.classList.remove('show'));
+  document.getElementById('mob-add-marker')?.addEventListener('click',()=>{ menu.classList.remove('show'); APP.addingMode=true; mapCon.classList.add('adding'); document.getElementById('add-hint').classList.add('show'); });
+  document.getElementById('mob-add-img')?.addEventListener('click',()=>{ menu.classList.remove('show'); mimAddingMode=true; mapCon.classList.add('adding'); document.getElementById('add-hint').textContent='🖼 Кликните на карту для размещения картинки'; document.getElementById('add-hint').classList.add('show'); });
 })();
 
-// ═══════════════════════════════════════════
-//  MOBILE — sidebar overlay + touch events
-// ═══════════════════════════════════════════
-function isMobile(){ return window.innerWidth <= 768; }
+// ── TOUCH MAP: pan + pinch ──
+let _lastDist=0;
+mapCon.addEventListener('touchstart',e=>{ e.preventDefault(); if(e.touches.length===1){MAP.drag=true;MAP.lx=e.touches[0].clientX;MAP.ly=e.touches[0].clientY;} else if(e.touches.length===2){MAP.drag=false;_lastDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);} },{passive:false});
+mapCon.addEventListener('touchmove',e=>{ e.preventDefault(); if(e.touches.length===1&&MAP.drag){MAP.ox+=e.touches[0].clientX-MAP.lx;MAP.oy+=e.touches[0].clientY-MAP.ly;MAP.lx=e.touches[0].clientX;MAP.ly=e.touches[0].clientY;drawMap();renderMapImages();renderMarkers();} else if(e.touches.length===2&&_lastDist>0){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);const r=mapCon.getBoundingClientRect();zoomTo(MAP.z*(d/_lastDist),(e.touches[0].clientX+e.touches[1].clientX)/2-r.left,(e.touches[0].clientY+e.touches[1].clientY)/2-r.top);_lastDist=d;} },{passive:false});
+mapCon.addEventListener('touchend',e=>{ if(e.touches.length===0){MAP.drag=false;_lastDist=0;} },{passive:true});
 
-let sbOverlay = null;
-function getSbOverlay(){
-  if(!sbOverlay){
-    sbOverlay = document.createElement('div');
-    sbOverlay.className = 'sidebar-overlay';
-    document.querySelector('.app-body').appendChild(sbOverlay);
-    sbOverlay.addEventListener('click', closeMobileSidebar);
-  }
-  return sbOverlay;
-}
-function openMobileSidebar(){
-  document.getElementById('sidebar').classList.add('mobile-open');
-  document.getElementById('sidebar').classList.remove('hidden');
-  getSbOverlay().classList.add('show');
-}
-function closeMobileSidebar(){
-  document.getElementById('sidebar').classList.remove('mobile-open');
-  getSbOverlay().classList.remove('show');
-}
-
-// Replace sidebar toggle with mobile-aware version
-document.getElementById('btn-toggle-sb').onclick = function(){
-  if(isMobile()){
-    const sb = document.getElementById('sidebar');
-    if(sb.classList.contains('mobile-open')) closeMobileSidebar();
-    else openMobileSidebar();
-  } else {
-    document.getElementById('sidebar').classList.toggle('hidden');
-  }
-};
-
-// Touch map: pan + pinch-zoom
-let lastTouchDist = 0;
-mapCon.addEventListener('touchstart', e=>{
-  e.preventDefault();
-  if(e.touches.length === 1){
-    MAP.drag = true;
-    MAP.lx = e.touches[0].clientX;
-    MAP.ly = e.touches[0].clientY;
-  } else if(e.touches.length === 2){
-    MAP.drag = false;
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
-    lastTouchDist = Math.hypot(dx, dy);
-  }
-}, {passive:false});
-
-mapCon.addEventListener('touchmove', e=>{
-  e.preventDefault();
-  if(e.touches.length === 1 && MAP.drag){
-    MAP.ox += e.touches[0].clientX - MAP.lx;
-    MAP.oy += e.touches[0].clientY - MAP.ly;
-    MAP.lx = e.touches[0].clientX;
-    MAP.ly = e.touches[0].clientY;
-    drawMap(); renderMapImages(); renderMarkers();
-  } else if(e.touches.length === 2 && lastTouchDist > 0){
-    const dx = e.touches[0].clientX - e.touches[1].clientX;
-    const dy = e.touches[0].clientY - e.touches[1].clientY;
-    const dist = Math.hypot(dx, dy);
-    const cx = (e.touches[0].clientX + e.touches[1].clientX)/2;
-    const cy = (e.touches[0].clientY + e.touches[1].clientY)/2;
-    const r  = mapCon.getBoundingClientRect();
-    zoomTo(MAP.z * (dist / lastTouchDist), cx - r.left, cy - r.top);
-    lastTouchDist = dist;
-  }
-}, {passive:false});
-
-mapCon.addEventListener('touchend', e=>{
-  if(e.touches.length === 0){ MAP.drag = false; lastTouchDist = 0; }
-}, {passive:true});
-
-window.addEventListener('resize', ()=>{
-  if(!isMobile() && sbOverlay) sbOverlay.classList.remove('show');
-});
+// ── Start: guests go straight to map (called LAST after all functions defined) ──
+enterAsGuest();

@@ -428,3 +428,19 @@ header{height:54px;background:var(--surface);border-bottom:1px solid var(--borde
 /* ── SECOND ADMIN BAR ── */
 .admin-bar-img{position:absolute;top:48px;left:50%;transform:translateX(-50%);background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.4);color:var(--accent2);border-radius:9px;padding:5px 14px;font-size:11px;font-weight:600;z-index:30;display:none;backdrop-filter:blur(4px);gap:7px;align-items:center;white-space:nowrap}
 .admin-bar-img.show{display:flex}
+
+/* ── TAGS ── */
+.tag-input-wrap{display:flex;flex-wrap:wrap;gap:4px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px 8px;cursor:text;min-height:38px;align-items:center}
+.tag-input-wrap:focus-within{border-color:var(--accent)}
+.tag-chip{display:inline-flex;align-items:center;gap:4px;background:var(--surface3);border:1px solid var(--border);border-radius:20px;padding:2px 8px;font-size:11px;color:var(--text2);white-space:nowrap}
+.tag-chip-rm{background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;padding:0;line-height:1;display:flex;align-items:center}
+.tag-chip-rm:hover{color:var(--danger)}
+.tag-input{border:none;outline:none;background:transparent;font-family:'Geologica',sans-serif;font-size:12px;color:var(--text);min-width:80px;flex:1}
+.tags-filter{padding:6px 9px 0;display:flex;flex-wrap:wrap;gap:4px;border-bottom:1px solid var(--border)}
+.tag-filter-chip{padding:2px 8px;border-radius:20px;border:1px solid var(--border);background:transparent;color:var(--text3);font-size:10px;font-family:'Geologica',sans-serif;cursor:pointer;transition:.2s}
+.tag-filter-chip:hover{background:var(--surface2);color:var(--text2)}
+.tag-filter-chip.active{background:var(--accent2);border-color:var(--accent2);color:#fff}
+.popup-tags{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:6px}
+.popup-tag{padding:1px 7px;background:rgba(99,102,241,.15);border:1px solid rgba(99,102,241,.3);border-radius:20px;font-size:9px;color:var(--accent2)}
+.pc-tags{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
+.pc-tag{padding:1px 6px;background:rgba(99,102,241,.12);border:1px solid rgba(99,102,241,.25);border-radius:20px;font-size:9px;color:var(--accent2)}

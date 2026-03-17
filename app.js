@@ -576,11 +576,30 @@ function showPopup(pl){
       ${pl.descHtml?`<div class="popup-desc">${pl.descHtml}</div>`:''}
       ${imgs}
       <div class="popup-coords">📍 ${pl.lat.toFixed(5)}, ${pl.lng.toFixed(5)}</div>
-      <div class="popup-actions"><button class="btn btn-ghost btn-sm" id="pop-goto">🎯</button>${admBtns}</div>
+      ${(pl.tags&&pl.tags.length)?`<div class="popup-tags">${pl.tags.map(t=>`<span class="popup-tag">#${t}</span>`).join('')}</div>`:''}
+      <div class="popup-actions">
+        <button class="btn btn-ghost btn-sm" id="pop-goto" title="Перейти">🎯</button>
+        <button class="btn btn-ghost btn-sm" id="pop-share" title="Поделиться ссылкой">🔗</button>
+        ${admBtns}
+        ${isAdmin?`<button class="btn btn-ghost btn-sm" id="pop-dup" title="Дублировать">📋</button>`:''}
+      </div>
     </div>`;
   mapCon.appendChild(pop);
   pop.querySelector('#pop-close').addEventListener('click',e=>{e.stopPropagation();APP.selectedId=null;renderMarkers();renderPlacesList();});
   pop.querySelector('#pop-goto').addEventListener('click',e=>{e.stopPropagation();centerOn(pl);});
+  pop.querySelector('#pop-share').addEventListener('click',e=>{
+    e.stopPropagation();
+    const url=location.origin+location.pathname+'?place='+pl.id;
+    navigator.clipboard?.writeText(url).then(()=>showToast('Ссылка скопирована!','success')).catch(()=>{
+      prompt('Скопируйте ссылку:',url);
+    });
+  });
+  if(isAdmin){
+    pop.querySelector('#pop-dup')?.addEventListener('click',e=>{
+      e.stopPropagation();
+      duplicatePlace(pl.id);
+    });
+  }
   if(isAdmin){
     pop.querySelector('#pop-edit').addEventListener('click',e=>{e.stopPropagation();openEditModal(pl.id);});
     pop.querySelector('#pop-del').addEventListener('click',e=>{e.stopPropagation();confirmDelete(pl.id);});
@@ -719,14 +738,16 @@ function renderCatFilter(){
     }
     c.appendChild(b);
   });
-  c.querySelectorAll('.cat-chip').forEach(b=>b.addEventListener('click',()=>{APP.filterCat=b.dataset.cat;renderCatFilter();renderPlacesList();drawMap();renderMarkers();}));
+  c.querySelectorAll('.cat-chip').forEach(b=>b.addEventListener('click',()=>{APP.filterCat=b.dataset.cat;APP_filterTag=null;renderCatFilter();renderPlacesList();drawMap();renderMarkers();}));
 }
 
 function renderPlacesList(){
   const container=document.getElementById('places-list');
   const cats=getCats();
-  const filtered=APP.filterCat==='all'?places:places.filter(x=>x.category===APP.filterCat);
-  if(!filtered.length){container.innerHTML=`<div class="empty-state"><div class="es-ico">📭</div><p>Нет мест в этой категории</p></div>`;return;}
+  // Filter by category AND tag
+  let filtered=APP.filterCat==='all'?places:places.filter(x=>x.category===APP.filterCat);
+  if(APP_filterTag) filtered=filtered.filter(x=>(x.tags||[]).includes(APP_filterTag));
+  if(!filtered.length){container.innerHTML=`<div class="empty-state"><div class="es-ico">📭</div><p>Нет мест${APP_filterTag?' с тегом #'+APP_filterTag:' в этой категории'}</p></div>`;renderTagsFilter();return;}
   const isAdmin=APP.role==='admin';
   container.innerHTML='';
   filtered.forEach(pl=>{
@@ -741,7 +762,7 @@ function renderPlacesList(){
     card.innerHTML=`
       <div class="pc-header">
         <div class="pc-icon" style="background:${pl.color}22">${icoHtml}</div>
-        <div class="pc-info"><div class="pc-name">${pl.name}</div><div class="pc-cat">${catIcoHtml} ${cat.label}</div></div>
+        <div class="pc-info"><div class="pc-name">${pl.name}</div><div class="pc-cat">${catIcoHtml} ${cat.label}</div>${(pl.tags&&pl.tags.length)?`<div class="pc-tags">${pl.tags.map(t=>`<span class="pc-tag">#${t}</span>`).join('')}</div>`:''}</div>
       </div>
       ${pl.descHtml?`<div class="pc-desc">${pl.descHtml}</div>`:''}
       ${thumb}
@@ -755,6 +776,7 @@ function renderPlacesList(){
     }));
     container.appendChild(card);
   });
+  renderTagsFilter();
 }
 function scrollSbTo(id){document.querySelector(`.place-card[data-id="${id}"]`)?.scrollIntoView({behavior:'smooth',block:'nearest'});}
 function centerOn(pl){
@@ -904,6 +926,8 @@ document.getElementById('btn-add-click').addEventListener('click',()=>{APP.addin
 // ═══════════════════════════════════════════
 let selectedEmoji='📍', selectedColor=COLORS[0], currentIconType='emoji', currentIconDataUrl=null;
 let selectedShape='pin', selectedMarkerSize=2, selectedShowIcon=true;
+let currentTags=[]; // теги редактируемого места
+let APP_filterTag=null; // активный фильтр по тегу
 let stagedPhotos=[];
 let editingCatId=null;
 
@@ -1036,6 +1060,7 @@ function openAddModal(lat,lng){
   selectedEmoji='📍'; selectedColor=COLORS[0];
   selectedShape='pin'; selectedMarkerSize=2; selectedShowIcon=true;
   setTimeout(syncShapeModal,0);
+  currentTags=[]; renderTagInputs();
   document.getElementById('f-icon-file').value='';
   document.getElementById('icon-preview-wrap').style.display='none';
   document.getElementById('icon-upload-area').style.display='block';
@@ -1056,6 +1081,7 @@ function openEditModal(id){
   selectedEmoji=pl.icon||'📍'; selectedColor=pl.color||COLORS[0];
   selectedShape=pl.shape||'pin'; selectedMarkerSize=pl.markerSize||2; selectedShowIcon=pl.showIcon!==false;
   setTimeout(syncShapeModal,0);
+  currentTags=[...(pl.tags||[])]; renderTagInputs();
   document.getElementById('rte-editor').innerHTML=pl.descHtml||'';
   if(currentIconType==='custom'&&currentIconDataUrl){
     document.getElementById('icon-preview-img').src=currentIconDataUrl;
@@ -1094,7 +1120,7 @@ function savePlace(){
   if(isNaN(lat)||isNaN(lng)){showToast('Установите точку на мини-карте','danger');return;}
 
   const cats=getCats(); const catDef=cats[cat]||cats.other;
-  const plData={name,category:cat,icon:currentIconType==='custom'?'📍':selectedEmoji,iconType:currentIconType,iconData:currentIconType==='custom'?currentIconDataUrl:null,color:selectedColor||catDef.color,descHtml,lat,lng,images:stagedPhotos,shape:selectedShape,markerSize:selectedMarkerSize,showIcon:selectedShowIcon,createdAt:Date.now()};
+  const plData={name,category:cat,icon:currentIconType==='custom'?'📍':selectedEmoji,iconType:currentIconType,iconData:currentIconType==='custom'?currentIconDataUrl:null,color:selectedColor||catDef.color,descHtml,lat,lng,images:stagedPhotos,shape:selectedShape,markerSize:selectedMarkerSize,showIcon:selectedShowIcon,tags:[...currentTags],createdAt:Date.now()};
 
   if(APP.editingId){
     const idx=places.findIndex(x=>x.id===APP.editingId);
@@ -1787,6 +1813,103 @@ let _lastDist=0;
 mapCon.addEventListener('touchstart',e=>{ e.preventDefault(); if(e.touches.length===1){MAP.drag=true;MAP.lx=e.touches[0].clientX;MAP.ly=e.touches[0].clientY;} else if(e.touches.length===2){MAP.drag=false;_lastDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);} },{passive:false});
 mapCon.addEventListener('touchmove',e=>{ e.preventDefault(); if(e.touches.length===1&&MAP.drag){MAP.ox+=e.touches[0].clientX-MAP.lx;MAP.oy+=e.touches[0].clientY-MAP.ly;MAP.lx=e.touches[0].clientX;MAP.ly=e.touches[0].clientY;drawMap();renderMapImages();renderMarkers();} else if(e.touches.length===2&&_lastDist>0){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);const r=mapCon.getBoundingClientRect();zoomTo(MAP.z*(d/_lastDist),(e.touches[0].clientX+e.touches[1].clientX)/2-r.left,(e.touches[0].clientY+e.touches[1].clientY)/2-r.top);_lastDist=d;} },{passive:false});
 mapCon.addEventListener('touchend',e=>{ if(e.touches.length===0){MAP.drag=false;_lastDist=0;} },{passive:true});
+
+// ═══════════════════════════════════════════
+//  TAGS
+// ═══════════════════════════════════════════
+function renderTagInputs(){
+  const wrap=document.getElementById('tag-input-wrap'); if(!wrap) return;
+  // Remove old chips (keep input)
+  wrap.querySelectorAll('.tag-chip').forEach(c=>c.remove());
+  const input=document.getElementById('tag-input');
+  currentTags.forEach(tag=>{
+    const chip=document.createElement('span');
+    chip.className='tag-chip';
+    chip.innerHTML=`#${tag} <button class="tag-chip-rm" data-tag="${tag}">×</button>`;
+    chip.querySelector('.tag-chip-rm').onclick=()=>{
+      currentTags=currentTags.filter(t=>t!==tag);
+      renderTagInputs();
+    };
+    wrap.insertBefore(chip, input);
+  });
+}
+
+function addTag(val){
+  const tag=val.trim().toLowerCase().replace(/[^a-zа-яё0-9_\-]/gi,'').slice(0,30);
+  if(tag && !currentTags.includes(tag) && currentTags.length<10){
+    currentTags.push(tag);
+    renderTagInputs();
+  }
+}
+
+document.getElementById('tag-input')?.addEventListener('keydown',e=>{
+  if(e.key==='Enter'||e.key===','){ e.preventDefault(); addTag(e.target.value); e.target.value=''; }
+  if(e.key==='Backspace'&&!e.target.value&&currentTags.length){ currentTags.pop(); renderTagInputs(); }
+});
+document.getElementById('tag-input')?.addEventListener('blur',e=>{ if(e.target.value.trim()){ addTag(e.target.value); e.target.value=''; } });
+document.getElementById('tag-input-wrap')?.addEventListener('click',()=>document.getElementById('tag-input')?.focus());
+
+// Tags filter in sidebar
+function renderTagsFilter(){
+  const bar=document.getElementById('tags-filter'); if(!bar) return;
+  // Collect all unique tags
+  const allTags=[...new Set(places.flatMap(p=>p.tags||[]))].sort();
+  if(!allTags.length){ bar.style.display='none'; return; }
+  bar.style.display='flex';
+  bar.innerHTML=allTags.map(t=>`<button class="tag-filter-chip${APP_filterTag===t?' active':''}" data-tag="${t}">#${t}</button>`).join('');
+  bar.querySelectorAll('.tag-filter-chip').forEach(b=>b.addEventListener('click',()=>{
+    APP_filterTag=APP_filterTag===b.dataset.tag?null:b.dataset.tag;
+    renderTagsFilter(); renderPlacesList(); drawMap(); renderMarkers();
+  }));
+}
+
+// (tags filter integrated directly into renderPlacesList below)
+
+// ═══════════════════════════════════════════
+//  DUPLICATE PLACE
+// ═══════════════════════════════════════════
+function duplicatePlace(id){
+  const pl=places.find(x=>x.id===id); if(!pl) return;
+  const dup={
+    ...JSON.parse(JSON.stringify(pl)), // deep copy including images
+    id: uid(),
+    name: pl.name+' (копия)',
+    lat: +(pl.lat+0.002).toFixed(5),
+    lng: +(pl.lng+0.002).toFixed(5),
+    createdAt: Date.now()
+  };
+  places.push(dup);
+  saveAll();
+  _clearMarkerCache();
+  drawMap(); renderMapImages(); renderMarkers();
+  renderPlacesList(); renderCatFilter();
+  refreshAdminViews();
+  showToast('Место продублировано','success');
+  // Open edit modal so user can adjust
+  openEditModal(dup.id);
+}
+
+// ═══════════════════════════════════════════
+//  SHARE LINK — ?place=ID on load
+// ═══════════════════════════════════════════
+(function(){
+  const params=new URLSearchParams(location.search);
+  const placeId=params.get('place');
+  if(placeId){
+    // Wait for map to init then open the place
+    const tryOpen=()=>{
+      const pl=places.find(x=>x.id===placeId);
+      if(!pl) return;
+      centerOn(pl);
+      setTimeout(()=>{ selectPlace(pl.id); },300);
+    };
+    // MAP might not be ready yet — wait
+    const orig=initMapIfNeeded;
+    const timer=setInterval(()=>{
+      if(mapReady){ clearInterval(timer); setTimeout(tryOpen,400); }
+    },100);
+  }
+})();
 
 // ── Start: guests go straight to map (called LAST after all functions defined) ──
 enterAsGuest();

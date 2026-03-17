@@ -41,6 +41,27 @@
         "21213"
       ],
       "createdAt": 1773773289155
+    },
+    {
+      "id": "mmuzu5ar931jop3lr0u",
+      "name": "ыявпаыкпываыва",
+      "category": "sport",
+      "icon": "🏪",
+      "iconType": "emoji",
+      "iconData": null,
+      "color": "#3b82f6",
+      "descHtml": "вапвапвап",
+      "lat": 51.22636,
+      "lng": 71.45283,
+      "images": [],
+      "shape": "square",
+      "markerSize": 5,
+      "showIcon": true,
+      "tags": [
+        "вапвап",
+        "олд"
+      ],
+      "createdAt": 1773774999891
     }
   ],
   "userCats": [],
@@ -67,5 +88,5 @@
     }
   ],
   "adminPass": "admin2024",
-  "updatedAt": "2026-03-17T19:14:27.420Z"
+  "updatedAt": "2026-03-17T19:16:39.893Z"
 }

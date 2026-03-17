@@ -44,12 +44,12 @@ function saveAll(){
 }
 if(!places.length){
   places=[
-    {id:uid(),name:'Центральный парк',category:'park',icon:'🌳',iconType:'emoji',iconData:null,color:'#22c55e',descHtml:'<b>Большой городской парк</b> с озером и тенистыми аллеями.',lat:51.18,lng:71.46,images:[],createdAt:Date.now()-86400000*3},
-    {id:uid(),name:'Кофейня «Арома»',category:'coffee',icon:'☕',iconType:'emoji',iconData:null,color:'#f59e0b',descHtml:'Уютное место с <u>авторским кофе</u> и домашней выпечкой.',lat:51.22,lng:71.49,images:[],createdAt:Date.now()-86400000*2},
-    {id:uid(),name:'Городской музей',category:'culture',icon:'🏛',iconType:'emoji',iconData:null,color:'#6366f1',descHtml:'Исторические <b>экспозиции</b> и временные выставки.',lat:51.19,lng:71.44,images:[],createdAt:Date.now()-86400000},
-    {id:uid(),name:'Стадион «Олимп»',category:'sport',icon:'⚽',iconType:'emoji',iconData:null,color:'#ef4444',descHtml:'Главный спортивный объект. Вместимость <b style="color:#ef4444">30 000</b> человек.',lat:51.17,lng:71.52,images:[],createdAt:Date.now()-3600000*5},
-    {id:uid(),name:'ТЦ «Мегаплаза»',category:'shop',icon:'🛍',iconType:'emoji',iconData:null,color:'#3b82f6',descHtml:'Крупный торговый центр с <b>300+</b> магазинами.',lat:51.23,lng:71.42,images:[],createdAt:Date.now()-3600000*2},
-    {id:uid(),name:'Больница №1',category:'health',icon:'🏥',iconType:'emoji',iconData:null,color:'#14b8a6',descHtml:'Круглосуточная скорая помощь и стационар.',lat:51.20,lng:71.55,images:[],createdAt:Date.now()-3600000},
+    {id:'default_park',name:'Центральный парк',category:'park',icon:'🌳',iconType:'emoji',iconData:null,color:'#22c55e',descHtml:'<b>Большой городской парк</b> с озером и тенистыми аллеями.',lat:51.18,lng:71.46,images:[],tags:[],createdAt:Date.now()-86400000*3},
+    {id:'default_coffee',name:'Кофейня «Арома»',category:'coffee',icon:'☕',iconType:'emoji',iconData:null,color:'#f59e0b',descHtml:'Уютное место с <u>авторским кофе</u> и домашней выпечкой.',lat:51.22,lng:71.49,images:[],tags:[],createdAt:Date.now()-86400000*2},
+    {id:'default_museum',name:'Городской музей',category:'culture',icon:'🏛',iconType:'emoji',iconData:null,color:'#6366f1',descHtml:'Исторические <b>экспозиции</b> и временные выставки.',lat:51.19,lng:71.44,images:[],tags:[],createdAt:Date.now()-86400000},
+    {id:'default_stadium',name:'Стадион «Олимп»',category:'sport',icon:'⚽',iconType:'emoji',iconData:null,color:'#ef4444',descHtml:'Главный спортивный объект. Вместимость <b style="color:#ef4444">30 000</b> человек.',lat:51.17,lng:71.52,images:[],tags:[],createdAt:Date.now()-3600000*5},
+    {id:'default_mall',name:'ТЦ «Мегаплаза»',category:'shop',icon:'🛍',iconType:'emoji',iconData:null,color:'#3b82f6',descHtml:'Крупный торговый центр с <b>300+</b> магазинами.',lat:51.23,lng:71.42,images:[],tags:[],createdAt:Date.now()-3600000*2},
+    {id:'default_hospital',name:'Больница №1',category:'health',icon:'🏥',iconType:'emoji',iconData:null,color:'#14b8a6',descHtml:'Круглосуточная скорая помощь и стационар.',lat:51.20,lng:71.55,images:[],tags:[],createdAt:Date.now()-3600000},
   ];
   saveAll();
 }
@@ -590,9 +590,18 @@ function showPopup(pl){
   pop.querySelector('#pop-share').addEventListener('click',e=>{
     e.stopPropagation();
     const url=location.origin+location.pathname+'?place='+pl.id;
-    navigator.clipboard?.writeText(url).then(()=>showToast('Ссылка скопирована!','success')).catch(()=>{
-      prompt('Скопируйте ссылку:',url);
-    });
+    // Robust clipboard: try modern API first, fallback to textarea trick
+    const doCopy=()=>{
+      const ta=document.createElement('textarea');
+      ta.value=url; ta.style.cssText='position:fixed;top:-9999px;opacity:0';
+      document.body.appendChild(ta); ta.select();
+      try{ document.execCommand('copy'); showToast('Ссылка скопирована!','success'); }
+      catch(err){ prompt('Скопируйте ссылку:',url); }
+      document.body.removeChild(ta);
+    };
+    if(navigator.clipboard && window.isSecureContext){
+      navigator.clipboard.writeText(url).then(()=>showToast('Ссылка скопирована!','success')).catch(doCopy);
+    } else { doCopy(); }
   });
   if(isAdmin){
     pop.querySelector('#pop-dup')?.addEventListener('click',e=>{

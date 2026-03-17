@@ -86,6 +86,10 @@ function updateHeaderForRole(){
   document.getElementById('btn-map-logout').style.display=isAdmin?'':'none';
   document.getElementById('btn-map-login').style.display=isAdmin?'none':'';
   document.getElementById('admin-bar').classList.toggle('show', isAdmin);
+  document.getElementById('admin-bar-img').classList.toggle('show', isAdmin);
+  // Mobile ⚙️ button
+  const mobBtn = document.getElementById('admin-mob-btn');
+  if(mobBtn) mobBtn.classList.toggle('show', isAdmin);
   if(isAdmin){
     document.getElementById('chip-icon').textContent='🔑';
     document.getElementById('chip-name').textContent='Администратор';
@@ -384,7 +388,7 @@ function zoomTo(target, cx, cy){
     MAP.oy = startOy + (endOy - startOy) * e;
     drawMap();
     renderMapImages();
-    renderMarkers();
+    renderMarkers(false);
     if(p < 1){ zoomAnimId = requestAnimationFrame(step); }
     else { zoomAnimId=null; }
   }
@@ -396,26 +400,91 @@ function zoomTo(target, cx, cy){
 // ═══════════════════════════════════════════
 const iconCache={};
 
-function markerSVG(color,icon,iconType,iconData){
-  const uid_='m'+Math.random().toString(36).slice(2,7);
-  const hasCustom=iconType==='custom'&&iconData;
-  // Используем foreignObject для эмодзи — единственный надёжный способ в SVG
-  const iconContent = hasCustom
-    ? `<defs><clipPath id="${uid_}"><circle cx="20" cy="19" r="12"/></clipPath></defs>
-       <image href="${iconData}" x="8" y="7" width="24" height="24" clip-path="url(#${uid_})"/>`
-    : `<foreignObject x="7" y="6" width="26" height="26">
-         <div xmlns="http://www.w3.org/1999/xhtml" style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:15px;line-height:1;user-select:none">${icon||'📍'}</div>
-       </foreignObject>`;
-  return`<svg viewBox="0 0 40 46" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="46">
-    <path d="M20 0C8.95 0 0 8.95 0 20c0 13.3 20 26 20 26s20-12.7 20-26C40 8.95 31.05 0 20 0z" fill="${color}"/>
-    <circle cx="20" cy="19" r="12.5" fill="rgba(0,0,0,0.20)"/>
-    <circle cx="20" cy="18" r="12.5" fill="white" fill-opacity="0.13"/>
-    ${iconContent}
-    <circle cx="20" cy="19" r="12.5" fill="none" stroke="rgba(255,255,255,0.20)" stroke-width="1"/>
-  </svg>`;
+// Размеры маркеров (px при max зуме ZOOM_MAX)
+const MARKER_SIZES = {1:24, 2:36, 3:48, 4:72, 5:96};
+
+function markerSVG(color, icon, iconType, iconData, shape, showIcon){
+  shape = shape || 'pin';
+  showIcon = showIcon !== false; // default true
+  const uid_ = 'm'+Math.random().toString(36).slice(2,7);
+  const hasCustom = iconType==='custom' && iconData;
+
+  // Icon content (emoji via foreignObject, custom via image)
+  let iconContent = '';
+  if(showIcon){
+    if(hasCustom){
+      iconContent = `<defs><clipPath id="${uid_}"><circle cx="20" cy="20" r="11"/></clipPath></defs>
+        <image href="${iconData}" x="9" y="9" width="22" height="22" clip-path="url(#${uid_})"/>`;
+    } else {
+      iconContent = `<foreignObject x="7" y="7" width="26" height="26">
+        <div xmlns="http://www.w3.org/1999/xhtml" style="width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-size:14px;line-height:1;user-select:none">${icon||'📍'}</div>
+      </foreignObject>`;
+    }
+  }
+
+  const dark  = 'rgba(0,0,0,0.22)';
+  const light = 'rgba(255,255,255,0.13)';
+  const rim   = 'rgba(255,255,255,0.22)';
+
+  // Shape bodies — all fit in 40×40 viewBox (pin uses 40×46)
+  if(shape === 'pin'){
+    return `<svg viewBox="0 0 40 46" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="46">
+      <path d="M20 0C8.95 0 0 8.95 0 20c0 13.3 20 26 20 26s20-12.7 20-26C40 8.95 31.05 0 20 0z" fill="${color}"/>
+      <circle cx="20" cy="19" r="12.5" fill="${dark}"/>
+      <circle cx="20" cy="18" r="12.5" fill="${light}"/>
+      ${iconContent}
+      <circle cx="20" cy="19" r="12.5" fill="none" stroke="${rim}" stroke-width="1"/>
+    </svg>`;
+  }
+  if(shape === 'circle'){
+    return `<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40">
+      <circle cx="20" cy="20" r="19" fill="${color}"/>
+      <circle cx="20" cy="20" r="13" fill="${dark}"/>
+      <circle cx="20" cy="19" r="13" fill="${light}"/>
+      ${iconContent}
+      <circle cx="20" cy="20" r="19" fill="none" stroke="${rim}" stroke-width="1.5"/>
+    </svg>`;
+  }
+  if(shape === 'square'){
+    return `<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40">
+      <rect x="1" y="1" width="38" height="38" rx="6" fill="${color}"/>
+      <rect x="8" y="8" width="24" height="24" rx="3" fill="${dark}"/>
+      <rect x="8" y="7" width="24" height="24" rx="3" fill="${light}"/>
+      ${iconContent}
+      <rect x="1" y="1" width="38" height="38" rx="6" fill="none" stroke="${rim}" stroke-width="1.5"/>
+    </svg>`;
+  }
+  if(shape === 'diamond'){
+    return `<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40">
+      <polygon points="20,1 39,20 20,39 1,20" fill="${color}"/>
+      <circle cx="20" cy="20" r="11" fill="${dark}"/>
+      <circle cx="20" cy="19" r="11" fill="${light}"/>
+      ${iconContent}
+      <polygon points="20,1 39,20 20,39 1,20" fill="none" stroke="${rim}" stroke-width="1.5"/>
+    </svg>`;
+  }
+  if(shape === 'triangle'){
+    return `<svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" width="40" height="40">
+      <polygon points="20,2 38,38 2,38" fill="${color}"/>
+      <circle cx="20" cy="26" r="9" fill="${dark}"/>
+      <circle cx="20" cy="25" r="9" fill="${light}"/>
+      ${iconContent}
+      <polygon points="20,2 38,38 2,38" fill="none" stroke="${rim}" stroke-width="1.5"/>
+    </svg>`;
+  }
+  return '';
 }
 
-function renderMarkers(){
+// renderMarkers — два режима:
+// 1) полная перестройка DOM (rebuild=true) — при изменении данных, фильтра, выбора
+// 2) только обновление позиций (rebuild=false) — при зуме и перемещении карты
+function renderMarkers(rebuild){
+  if(rebuild === false){
+    // Быстрый путь: только обновляем позиции существующих маркеров
+    _updateMarkerPositions();
+    return;
+  }
+  // Полная перестройка
   document.querySelectorAll('.marker').forEach(m=>m.remove());
   document.querySelector('.popup')?.remove();
   const isAdmin=APP.role==='admin';
@@ -423,13 +492,39 @@ function renderMarkers(){
   places.forEach(pl=>{
     if(APP.filterCat!=='all'&&pl.category!==APP.filterCat) return;
     const pos=pt(pl.lat,pl.lng);
-    if(pos.x<-60||pos.x>canvas.width+60||pos.y<-80||pos.y>canvas.height+40) return;
+    if(pos.x<-200||pos.x>canvas.width+200||pos.y<-200||pos.y>canvas.height+200){
+      // Вне экрана — пропускаем, но не удаляем из DOM если уже есть
+      return;
+    }
+
+    const basePx  = MARKER_SIZES[pl.markerSize||2] || 36;
+    const scaledPx = Math.max(4, basePx * (MAP.z / ZOOM_MAX));
+    const shape   = pl.shape || 'pin';
+    const svgH    = shape==='pin' ? scaledPx*1.15 : scaledPx;
+    const offsetY = shape==='pin' ? svgH : svgH/2;
 
     const el=document.createElement('div');
     el.className='marker'+(APP.selectedId===pl.id?' selected':'');
     el.dataset.id=pl.id;
-    el.style.left=pos.x+'px'; el.style.top=pos.y+'px';
-    el.innerHTML=`<div class="marker-label">${pl.name}</div><div class="marker-body">${markerSVG(pl.color,pl.icon,pl.iconType,pl.iconData)}</div>`;
+    el.dataset.lat=pl.lat;
+    el.dataset.lng=pl.lng;
+    el.style.position='absolute';
+    el.style.cursor='pointer';
+    el.style.zIndex='30';
+    el.style.left=pos.x+'px';
+    el.style.top=pos.y+'px';
+    el.style.transform=`translate(-50%,-${offsetY}px)`;
+    if(APP.selectedId===pl.id) el.style.filter='drop-shadow(0 4px 14px rgba(59,130,246,.7))';
+
+    const svgStr = markerSVG(pl.color,pl.icon,pl.iconType,pl.iconData,shape,pl.showIcon);
+    const scaledSvg = svgStr
+      .replace(/width="40"/, `width="${Math.round(scaledPx)}"`)
+      .replace(/height="46"/, `height="${Math.round(svgH)}"`)
+      .replace(/height="40"/, `height="${Math.round(scaledPx)}"`);
+
+    const labelSize = Math.max(8, Math.min(12, 9 * MAP.z / ZOOM_MAX * 2));
+    el.innerHTML=`<div class="marker-label" style="font-size:${labelSize}px">${pl.name}</div><div class="marker-body">${scaledSvg}</div>`;
+
     el.addEventListener('click',e=>{e.stopPropagation();selectPlace(pl.id);});
     if(isAdmin) el.addEventListener('mousedown',e=>startMarkerDrag(e,pl));
     mapCon.appendChild(el);
@@ -439,6 +534,48 @@ function renderMarkers(){
     const pl=places.find(x=>x.id===APP.selectedId);
     if(pl) showPopup(pl);
   }
+}
+
+// Обновляет только left/top/transform/size без пересоздания DOM
+function _updateMarkerPositions(){
+  document.querySelectorAll('.marker[data-id]').forEach(el=>{
+    const id=el.dataset.id;
+    const pl=places.find(x=>x.id===id);
+    if(!pl) return;
+
+    const pos=pt(pl.lat,pl.lng);
+    const basePx   = MARKER_SIZES[pl.markerSize||2] || 36;
+    const scaledPx = Math.max(4, basePx * (MAP.z / ZOOM_MAX));
+    const shape    = pl.shape || 'pin';
+    const svgH     = shape==='pin' ? scaledPx*1.15 : scaledPx;
+    const offsetY  = shape==='pin' ? svgH : svgH/2;
+
+    // Позиция
+    el.style.left = pos.x+'px';
+    el.style.top  = pos.y+'px';
+    el.style.transform = `translate(-50%,-${offsetY}px)`;
+
+    // Если маркер вышел за экран — скрываем
+    const outOfView = pos.x<-200||pos.x>canvas.width+200||pos.y<-200||pos.y>canvas.height+200;
+    el.style.display = outOfView ? 'none' : '';
+
+    // Обновляем SVG размер
+    const body = el.querySelector('.marker-body');
+    if(body){
+      const svg = body.querySelector('svg');
+      if(svg){
+        svg.setAttribute('width', Math.round(scaledPx));
+        svg.setAttribute('height', shape==='pin' ? Math.round(svgH) : Math.round(scaledPx));
+      }
+    }
+
+    // Обновляем попап если открыт
+    const pop = mapCon.querySelector('.popup');
+    if(pop && APP.selectedId===id){
+      pop.style.left=pos.x+'px';
+      pop.style.top=pos.y+'px';
+    }
+  });
 }
 
 let mdrag=null;
@@ -683,7 +820,7 @@ function centerOn(pl){
   function step(now){
     const p=Math.min(1,(now-t0)/dur),e=ease(p);
     MAP.ox=sOx+(targetOx-sOx)*e; MAP.oy=sOy+(targetOy-sOy)*e;
-    drawMap(); renderMapImages(); renderMarkers();
+    drawMap(); renderMapImages(); renderMarkers(false);
     if(p<1) zoomAnimId=requestAnimationFrame(step); else zoomAnimId=null;
   }
   zoomAnimId=requestAnimationFrame(step);
@@ -781,7 +918,7 @@ document.addEventListener('mousemove',e=>{
   }
   if(!MAP.drag) return;
   MAP.ox+=e.clientX-MAP.lx; MAP.oy+=e.clientY-MAP.ly; MAP.lx=e.clientX; MAP.ly=e.clientY;
-  drawMap(); renderMapImages(); renderMarkers();
+  drawMap(); renderMapImages(); renderMarkers(false);
 });
 document.addEventListener('mouseup',()=>{MAP.drag=false;mapCon.classList.remove('grabbing');});
 // Колесо мыши — плавный зум с накоплением
@@ -812,6 +949,7 @@ document.getElementById('btn-add-click').addEventListener('click',()=>{APP.addin
 //  PLACE MODAL
 // ═══════════════════════════════════════════
 let selectedEmoji='📍', selectedColor=COLORS[0], currentIconType='emoji', currentIconDataUrl=null;
+let selectedShape='pin', selectedMarkerSize=2, selectedShowIcon=true;
 let stagedPhotos=[];
 let editingCatId=null;
 
@@ -946,6 +1084,8 @@ function openAddModal(lat,lng){
   document.getElementById('icon-preview-wrap').style.display='none';
   document.getElementById('icon-upload-area').style.display='block';
   document.getElementById('f-photos').value='';
+  selectedShape='pin'; selectedMarkerSize=2; selectedShowIcon=true;
+  initShapeModal();
   populateCatSelect(); document.getElementById('f-cat').value='';
   buildEmojiGrid('emoji-grid',selectedEmoji,e=>{selectedEmoji=e; if(currentIconType==='emoji'){const pin=document.getElementById('mini-pin');pin.textContent=e;}});
   buildColorGrid('color-grid',selectedColor,c=>{selectedColor=c;});
@@ -978,6 +1118,8 @@ function openEditModal(id){
     document.querySelector('[data-itab="emoji"]').classList.add('active');
     document.getElementById('itab-emoji').classList.add('active');
   }
+  selectedShape=pl.shape||'pin'; selectedMarkerSize=pl.markerSize||2; selectedShowIcon=pl.showIcon!==false;
+  initShapeModal();
   populateCatSelect(); document.getElementById('f-cat').value=pl.category;
   document.getElementById('f-lat').value=pl.lat; document.getElementById('f-lng').value=pl.lng;
   buildEmojiGrid('emoji-grid',selectedEmoji,e=>{selectedEmoji=e;});
@@ -998,7 +1140,7 @@ function savePlace(){
   if(isNaN(lat)||isNaN(lng)){showToast('Установите точку на мини-карте','danger');return;}
 
   const cats=getCats(); const catDef=cats[cat]||cats.other;
-  const plData={name,category:cat,icon:currentIconType==='custom'?'📍':selectedEmoji,iconType:currentIconType,iconData:currentIconType==='custom'?currentIconDataUrl:null,color:selectedColor||catDef.color,descHtml,lat,lng,images:stagedPhotos,createdAt:Date.now()};
+  const plData={name,category:cat,icon:currentIconType==='custom'?'📍':selectedEmoji,iconType:currentIconType,iconData:currentIconType==='custom'?currentIconDataUrl:null,color:selectedColor||catDef.color,descHtml,lat,lng,images:stagedPhotos,shape:selectedShape,markerSize:selectedMarkerSize,showIcon:selectedShowIcon,createdAt:Date.now()};
 
   if(APP.editingId){
     const idx=places.findIndex(x=>x.id===APP.editingId);
@@ -1469,7 +1611,7 @@ function startImgDrag(e,mi){
       mapImages[idx].lat=+c.lat.toFixed(5);
       mapImages[idx].lng=+c.lng.toFixed(5);
       // Живая перерисовка во время перетаскивания
-      drawMap(); renderMapImages(); renderMarkers();
+      drawMap(); renderMapImages(); renderMarkers(false);
     }
   };
 
@@ -1633,6 +1775,91 @@ function renderAll(){
 
 // ── Start: guests go straight to map (called LAST after all functions defined) ──
 enterAsGuest();
+
+// ═══════════════════════════════════════════
+//  MARKER SHAPE / SIZE / ICON MODAL LOGIC
+// ═══════════════════════════════════════════
+function initShapeModal(){
+  // Shape buttons
+  document.querySelectorAll('.shape-btn').forEach(b=>{
+    b.style.color = selectedColor;
+    b.classList.toggle('active', b.dataset.shape===selectedShape);
+    b.onclick = ()=>{
+      selectedShape=b.dataset.shape;
+      document.querySelectorAll('.shape-btn').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+    };
+  });
+  // Size buttons
+  document.querySelectorAll('.msize-btn').forEach(b=>{
+    b.classList.toggle('active', +b.dataset.msize===selectedMarkerSize);
+    b.onclick = ()=>{
+      selectedMarkerSize=+b.dataset.msize;
+      document.querySelectorAll('.msize-btn').forEach(x=>x.classList.remove('active'));
+      b.classList.add('active');
+    };
+  });
+  // Toggle icon
+  const tog = document.getElementById('toggle-show-icon');
+  const lbl = document.getElementById('show-icon-label');
+  tog.classList.toggle('on', selectedShowIcon);
+  lbl.textContent = selectedShowIcon ? 'Показывать иконку' : 'Без иконки (только цвет)';
+  tog.onclick = ()=>{
+    selectedShowIcon = !selectedShowIcon;
+    tog.classList.toggle('on', selectedShowIcon);
+    lbl.textContent = selectedShowIcon ? 'Показывать иконку' : 'Без иконки (только цвет)';
+  };
+}
+
+// When color changes — update shape preview color
+const _origBuildColorGrid = buildColorGrid;
+buildColorGrid = function(gridId, currentColor, onSelect){
+  _origBuildColorGrid(gridId, currentColor, (c)=>{
+    onSelect(c);
+    if(gridId==='color-grid'){
+      selectedColor=c;
+      document.querySelectorAll('.shape-btn').forEach(b=>b.style.color=c);
+    }
+  });
+};
+
+// ── Second admin bar: add image click handler ──
+document.getElementById('btn-add-img-click').addEventListener('click',()=>{
+  showPage('map');
+  mimAddingMode=true;
+  mapCon.classList.add('adding');
+  document.getElementById('add-hint').textContent='🖼 Кликните на карту для размещения изображения';
+  document.getElementById('add-hint').classList.add('show');
+  showToast('Кликните на карту для размещения картинки','info');
+});
+
+// ── MOBILE ADMIN DROPDOWN ──
+(function(){
+  const btn  = document.getElementById('admin-mob-btn');
+  const menu = document.getElementById('admin-mob-menu');
+  if(!btn || !menu) return;
+
+  btn.addEventListener('click', e=>{
+    e.stopPropagation();
+    menu.classList.toggle('show');
+  });
+  document.addEventListener('click', ()=> menu.classList.remove('show'));
+
+  document.getElementById('mob-add-marker').addEventListener('click',()=>{
+    menu.classList.remove('show');
+    APP.addingMode=true;
+    mapCon.classList.add('adding');
+    document.getElementById('add-hint').textContent='📍 Кликните на карту для размещения точки';
+    document.getElementById('add-hint').classList.add('show');
+  });
+  document.getElementById('mob-add-img').addEventListener('click',()=>{
+    menu.classList.remove('show');
+    mimAddingMode=true;
+    mapCon.classList.add('adding');
+    document.getElementById('add-hint').textContent='🖼 Кликните на карту для размещения картинки';
+    document.getElementById('add-hint').classList.add('show');
+  });
+})();
 
 // ═══════════════════════════════════════════
 //  MOBILE — sidebar overlay + touch events
